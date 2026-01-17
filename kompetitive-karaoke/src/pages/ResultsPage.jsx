@@ -110,8 +110,8 @@ export default function ResultsPage({ onBack }) {
 
   // Get players from Zustand - don't override with mock data
   const players = useLobbyStore((state) => state.lobby.players);
-  const battleId = useLobbyStore((state) => state.battle.battleId);
-  const lobbyId = useLobbyStore((state) => state.lobby.id);
+  const lobbyId = useLobbyStore((state) => state.lobby.roomId);
+  const roomCode = useLobbyStore((state) => state.lobby.roomCode);
 
   // TODO: BACKEND #1 - Replace mock sort with server results
   // After server sends BATTLE_RESULTS, these will be authoritative
@@ -135,7 +135,8 @@ export default function ResultsPage({ onBack }) {
         //   method: 'POST',
         //   headers: { 'Content-Type': 'application/json' },
         //   body: JSON.stringify({
-        //     battleId: battleId,
+        //     lobbyId: lobbyId,
+        //     roomCode: roomCode,
         //     mode: 'ranked',
         //     players: sortedPlayers.map((p, idx) => ({
         //       userId: p.id,
@@ -166,7 +167,7 @@ export default function ResultsPage({ onBack }) {
         //   body: JSON.stringify({
         //     won: true,
         //     finalScore: currentUser.score,
-        //     battleId: battleId
+        //     lobbyId: lobbyId
         //   })
         // });
       } catch (err) {
@@ -176,7 +177,7 @@ export default function ResultsPage({ onBack }) {
 
     persistResults();
     updateUserStats();
-  }, [battleId, sortedPlayers, lobbyId]);
+  }, [lobbyId, sortedPlayers, roomCode]);
 
   // =========================================================================
   // FETCH GLOBAL RANK (On Mount)
