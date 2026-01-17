@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLobbyStore } from "../store/lobbyStore";
+import { useLobbyStore, LOBBY_PHASES } from "../store/lobbyStore";
 import BattlePage from "./BattlePage";
 import ResultsPage from "./ResultsPage";
 import LoadingScreen from "./LoadingScreen";
@@ -25,19 +25,19 @@ function LobbyScreen() {
   const allReady = lobby.players.every((p) => p.ready);
 
   // Render BattlePage if phase is IN_BATTLE
-  if (lobby.phase === "IN_BATTLE") {
+  if (lobby.phase === LOBBY_PHASES.IN_BATTLE) {
     return <BattlePage onEnd={(score) => endBattle({ score })} />;
   }
 
   // Render ResultsPage if phase is RESULTS or user opts to view it
-  if (showResults || lobby.phase === "RESULTS") {
+  if (showResults || lobby.phase === LOBBY_PHASES.RESULTS) {
     return (
       <ResultsPage
             players={lobby.players}
             onBack={() => {
               setShowResults(false);
               // Reset phase back to LOBBY
-              useLobbyStore.getState().setLobby({ ...lobby, phase: "LOBBY" });
+              useLobbyStore.getState().setLobby({ ...lobby, phase: LOBBY_PHASES.LOBBY });
             }}
         />
     );
@@ -67,7 +67,7 @@ function LobbyScreen() {
               onStart={() => startBattle()}
             />
             {/* Button to view results after battle */}
-            {lobby.phase === "RESULTS" && (
+            {lobby.phase === LOBBY_PHASES.RESULTS && (
               <button
                 className="mt-4 px-4 py-2 bg-blue-600 rounded font-bold"
                 onClick={() => setShowResults(true)}

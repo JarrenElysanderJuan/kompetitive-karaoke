@@ -4,7 +4,7 @@ import ScoreBoard from "../components/ScoreBoard";
 import ScoreCardSidebar from "../components/ScoreCardSidebar";
 import { useMockWebSocket } from "../hooks/UseMockWebSocket";
 import { useAudioCapture } from "../hooks/useAudioCapture";
-import { useLobbyStore } from "../store/lobbyStore";
+import { useLobbyStore, LOBBY_PHASES } from "../store/lobbyStore";
 
 function BattlePage({ onEnd }) {
   // Initialize mock WebSocket
@@ -20,7 +20,7 @@ function BattlePage({ onEnd }) {
   const onAudioChunk = useCallback(
     (chunk) => {
       // Only send audio chunks during the battle phase
-      if (lobby.phase === "IN_BATTLE") {
+      if (lobby.phase === LOBBY_PHASES.IN_BATTLE) {
         handleAudioChunk({
           ...chunk,
           userId: currentUserId,
