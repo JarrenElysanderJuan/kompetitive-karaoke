@@ -17,15 +17,46 @@
  * 
  * AUTHORITY: SERVER-OWNED (server manages full player list)
  * 
+ * FIELD BREAKDOWN:
+ *
+ *   READ-ONLY (server assigns, client displays only):
+ *     - id: unique player identifier assigned by server
+ *     - name: player's display name (set at join)
+ *     - socketId: server-side connection ID for WebSocket
+ *     - isHost: whether this player can start the battle
+ *     - connected: whether player is currently connected to server
+ *
+ *   MUTABLE BY CLIENT (client sends intent, server validates):
+ *     - ready: player marking themselves as ready (validated by server)
+ *
+ *   CALCULATED BY SERVER (from audio analysis):
+ *     - score: final calculated score (NOT client-computed)
+ *     - combo: current combo multiplier (server-driven from audio quality)
+ *     - accuracy: accuracy percentage (calculated from audio timing)
+ *     - finished: set by server when player completes lyrics
+ *
+ * SCORING AUTHORITY:
+ *   - Client must NOT calculate score locally
+ *   - Client captures audio, sends chunks to server
+ *   - Server analyzes audio + lyric timing, calculates score
+ *   - Server broadcasts score via PLAYER_SCORE_UPDATE message
+ *   - Client updates UI only from server messages
+ *
+ * TODO: BACKEND - Remove any client-side score calculation logic
+ *                  Score should be:
+ *                    accuracy = (correctSyllables / totalSyllables) * 100
+ *                    combo = consecutive correct syllables (reset on miss)
+ *                    score = baseScore * (1 + accuracyBonus) * comboMultiplier
+ * 
  * @property {string} id - Unique player ID assigned by server
  * @property {string} name - Player's display name
- * @property {string} socketId - Server's WebSocket connection ID (TODO: BACKEND)
- * @property {boolean} connected - Whether player is currently connected
- * @property {boolean} ready - Whether player marked as ready
- * @property {boolean} isHost - Whether player is the lobby host (can start battle)
- * @property {number} score - Current score (calculated by server)
- * @property {number} combo - Current combo multiplier (calculated by server, TODO: BACKEND)
- * @property {number} accuracy - Accuracy percentage (calculated by server, TODO: BACKEND)
+ * @property {string} socketId - Server's WebSocket connection ID
+ * @property {boolean} connected - Currently connected to server
+ * @property {boolean} ready - Player marked as ready to battle
+ * @property {boolean} isHost - Can this player start the battle?
+ * @property {number} score - Total score (server-calculated, NOT client)
+ * @property {number} combo - Consecutive correct syllables (server-tracked)
+ * @property {number} accuracy - Accuracy % (server-calculated from audio analysis)
  * @property {boolean} finished - Whether player finished the lyrics
  */
 export const PlayerStateShape = {

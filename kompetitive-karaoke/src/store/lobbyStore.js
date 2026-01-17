@@ -69,6 +69,16 @@ export const useLobbyStore = create((set, get) => ({
   /**
    * addPlayer: Add a player to the lobby
    * AUTHORITY: Server (client calls this when server broadcasts player join)
+   * 
+   * PLAYER FIELDS RECEIVED FROM SERVER:
+   *   - id: unique identifier (assigned by server)
+   *   - name: display name (from join request)
+   *   - ready: false (initial state)
+   *   - score: 0 (initial score)
+   *   - isHost: based on lobby state
+   *   - connected: true (just joined)
+   *   - (other fields set by server)
+   *
    * TODO: BACKEND - this will be triggered by "PLAYER_JOINED" or "LOBBY_SNAPSHOT" message
    */
   addPlayer: (player) =>
@@ -79,6 +89,12 @@ export const useLobbyStore = create((set, get) => ({
   /**
    * removePlayer: Remove a player from the lobby
    * AUTHORITY: Server (client calls when server broadcasts player leave)
+   * 
+   * Triggered when:
+   *   - Player manually leaves
+   *   - Player disconnects
+   *   - Player gets kicked by host
+   *
    * TODO: BACKEND - triggered by "PLAYER_LEFT" or connection drop
    */
   removePlayer: (playerId) =>
@@ -92,6 +108,20 @@ export const useLobbyStore = create((set, get) => ({
   /**
    * setReady: Update a player's ready status
    * AUTHORITY: Shared (client sends intention, server validates and broadcasts)
+   * 
+   * MUTABLE FIELD: ready (only this field is client-mutable)
+   * 
+   * Client-side flow:
+   *   1. User clicks "Ready" button in UI
+   *   2. Call setReady(currentUserId, true)
+   *   3. Optimistically update local state
+   *   4. Send "SET_READY" event to server
+   *   5. Server validates and broadcasts to all players
+   *   6. Receive "PLAYER_READY_UPDATE" message confirming
+   * 
+   * ❌ DO NOT mutate other player fields here (score, combo, accuracy, etc.)
+   *    Those are server-calculated and only updated via updateScore()
+   *
    * TODO: BACKEND - send "SET_READY" event to server, update on server response
    */
   setReady: (playerId, ready) =>
@@ -149,14 +179,45 @@ export const useLobbyStore = create((set, get) => ({
     })),
 
   // ============================================================================
-  // LOBBY ACTIONS - Scoring
+  // LOBBY ACTIONS - Scoring (SERVER-DRIVEN)
   // ============================================================================
 
   /**
-   * updateScore: Update a player's score
+   * updateScore: Update a player's score, combo, and accuracy
    * AUTHORITY: Server (calculates from audio analysis, broadcasts to all clients)
+   * 
+   * SCORE CALCULATION FLOW:
+   *   1. Client captures audio during battle (20ms chunks)
+   *   2. Client sends audio chunks to server with timestamps
+   *   3. Server analyzes audio:
+   *      - Extracts vocal patterns
+   *      - Compares against expected lyric syllables
+   *      - Measures timing accuracy
+   *   4. Server calculates:
+   *      - accuracy = (correctSyllables / totalSyllables) * 100
+   *      - combo = consecutive correct syllables (resets on misses)
+   *      - score = baseScore * accuracyMultiplier * comboMultiplier
+   *   5. Server broadcasts PLAYER_SCORE_UPDATE message
+   *   6. Client receives and calls updateScore()
+   * 
+   * FIELDS UPDATED HERE (ALL server-calculated, never client-local):
+   *   - score: total accumulated score for this battle
+   *   - combo: current streak of correct syllables
+   *   - accuracy: % of syllables sung correctly
+   * 
+   * ❌ CLIENT MUST NOT:
+   *     - Calculate score locally
+   *     - Guess accuracy from audio
+   *     - Estimate combo from timing
+   *   
+   *   Always wait for server PLAYER_SCORE_UPDATE message
+   *
    * TODO: BACKEND - this is triggered by "PLAYER_SCORE_UPDATE" message from server
    *                  NOT by client calculation
+   *                  Implement server scoring algorithm:
+   *                    - syllable detection from audio
+   *                    - timing comparison against lyric marks
+   *                    - accuracy/combo calculation
    */
   updateScore: (playerId, score, combo = 0, accuracy = 0) =>
     set((state) => ({
@@ -171,7 +232,21 @@ export const useLobbyStore = create((set, get) => ({
   /**
    * setResults: Set final results when battle ends
    * AUTHORITY: Server (calculates final scores, broadcasts in "BATTLE_RESULTS")
+   * 
+   * SERVER RESPONSIBILITIES:
+   *   - Determines when battle ends (all players finish or timeout)
+   *   - Calculates final scores for all players
+   *   - Ranks players by score
+   *   - Sends BATTLE_RESULTS message with final player list
+   * 
+   * CLIENT RESPONSIBILITIES:
+   *   - Receives setResults() call from BATTLE_RESULTS handler
+   *   - Updates players in store with final scores
+   *   - Displays results page with server-provided rankings
+   *   - Does NOT recalculate or adjust final scores
+   *
    * TODO: BACKEND - triggered by "BATTLE_RESULTS" server message
+   *                  Include final scores, rankings, and any badges/achievements
    */
   setResults: (results) =>
     set((state) => ({

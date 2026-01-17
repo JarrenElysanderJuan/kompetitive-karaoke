@@ -1,10 +1,27 @@
+/**
+ * ScoreCardSidebar - Live score display during battle
+ * 
+ * STATE AUTHORITY:
+ *   - Reads scores directly from Zustand store
+ *   - Store receives scores from server via PLAYER_SCORE_UPDATE messages
+ *   - This component NEVER calculates scores locally
+ *   - Only responsibility: display server-provided scores
+ * 
+ * SCORE DATA FLOW:
+ *   Server (audio analysis) -> updateScore() -> Zustand store -> this component
+ * 
+ * TODO: BACKEND - scores come from real server once integrated
+ *       Currently from mock WebSocket (no actual audio analysis)
+ */
+
 import { useLobbyStore } from "../store/lobbyStore";
 
 export default function ScoreCardSidebar() {
   // Read players directly from the store
+  // These scores are from server (or mock) - never calculated here
   const players = useLobbyStore((state) => state.lobby.players);
 
-  // Sort descending
+  // Sort descending by server-provided scores
   const sortedScores = [...players].sort((a, b) => b.score - a.score);
 
   return (
