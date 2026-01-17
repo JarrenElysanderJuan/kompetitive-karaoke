@@ -211,10 +211,8 @@ export default function ResultsPage({ onBack }) {
       //   method: 'POST'
       // });
 
-      // Reset Zustand state
-      useLobbyStore((state) => {
-        state.resetToLobby();
-      });
+      // Reset Zustand state using getState()
+      useLobbyStore.getState().resetToLobby();
 
       // Navigate back to lobby
       onBack();
