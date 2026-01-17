@@ -4,7 +4,8 @@ import '../App.css';
 
 function Welcome() {
   const [username, setUsername] = useState("");
-  const setCurrentUser = useLobbyStore((state) => state.setCurrentUserName);
+  const setCurrentUserName = useLobbyStore((state) => state.setCurrentUserName);
+  const setCurrentUserId = useLobbyStore((state) => state.setCurrentUserId);
   const [error, setError] = useState("");
 
   const handleStart = () => {
@@ -14,8 +15,11 @@ function Welcome() {
       return;
     }
     setError("");
-    setCurrentUser(trimmed);
-    console.log("Username set:", trimmed);
+    // Generate a unique user ID
+    const userId = "user_" + Math.random().toString(36).substring(2, 10);
+    setCurrentUserId(userId);
+    setCurrentUserName(trimmed);
+    console.log("User set:", { userId, username: trimmed });
     // TODO: navigate to lobby selection/test page
   };
 

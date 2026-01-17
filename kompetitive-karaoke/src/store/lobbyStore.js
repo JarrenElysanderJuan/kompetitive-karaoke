@@ -1,4 +1,4 @@
-// store/lobbyStore.js
+
 import { create } from "zustand";
 
 export const useLobbyStore = create((set, get) => ({
@@ -71,4 +71,58 @@ export const useLobbyStore = create((set, get) => ({
     set((state) => ({
       lobby: { ...state.lobby, players: results },
     })),
+
+  // --- Lobby Management ---
+  createLobby: (roomName, maxPlayers = 4) =>
+    set(() => {
+      const id = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const state = get();
+      return {
+        lobby: {
+          roomId: id,
+          roomCode: id,
+          name: roomName,
+          maxPlayers,
+          phase: "LOBBY",
+          song: null,
+          players: [
+            {
+              id: state.currentUserId,
+              name: state.currentUserName,
+              ready: false,
+              score: 0,
+              combo: 0,
+              accuracy: 0,
+              finished: false,
+              isHost: true,
+              socketId: null,
+              connected: true,
+            },
+          ],
+          hostId: state.currentUserId,
+        },
+      };
+    }),
+
+  joinLobby: (mockLobby) =>
+    set(() => {
+      const state = get();
+      // Check if player already in lobby
+      if (!mockLobby.players.find((p) => p.id === state.currentUserId)) {
+        mockLobby.players.push({
+          id: state.currentUserId,
+          name: state.currentUserName,
+          ready: false,
+          score: 0,
+          combo: 0,
+          accuracy: 0,
+          finished: false,
+          isHost: false,
+          socketId: null,
+          connected: true,
+        });
+      }
+
+      return { lobby: mockLobby };
+    }),
 }));

@@ -1,12 +1,9 @@
 import Podium from "../components/Podium";
 import Leaderboard from "../components/Leaderboard";
 import { useLobbyStore } from "../store/lobbyStore";
-import { useMockPlayers } from "../hooks/useMockPlayers";
 
 export default function ResultsPage({ onBack }) {
-  useMockPlayers();
-  
-  // Get players from Zustand
+  // Get players from Zustand - don't override with mock data
   const players = useLobbyStore((state) => state.lobby.players);
   const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
 

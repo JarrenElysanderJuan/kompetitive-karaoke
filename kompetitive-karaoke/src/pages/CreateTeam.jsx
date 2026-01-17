@@ -1,41 +1,28 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useLobbyStore } from '../store/lobbyStore';
 
 const CreateTeam = () => {
   const [roomName, setRoomName] = useState('');
-  const [maxPlayers, setMaxPlayers] = useState(2);
+  const [maxPlayers, setMaxPlayers] = useState(4);
+  const navigate = useNavigate();
+  const currentUserId = useLobbyStore((state) => state.currentUserId);
   const currentUserName = useLobbyStore((state) => state.currentUserName);
+  const createLobby = useLobbyStore((state) => state.createLobby);
 
   const handleCreate = () => {
     if (!roomName.trim()) {
       alert('Please enter a room name');
       return;
     }
-    if (!currentUserName) {
-      alert('Set a username first!');
+    if (!currentUserId || !currentUserName) {
+      alert('Please set a username first!');
       return;
     }
 
-    // Mock POST request
-    const mockLobby = {
-      roomId: 'room_' + Math.random().toString(36).substr(2, 6), // random id
-      roomCode: Math.random().toString(36).substr(2, 4).toUpperCase(), // 4-letter code
-      name: roomName,
-      maxPlayers,
-      players: [currentUserName], // creator joins automatically
-      phase: 'LOBBY',
-      song: null,
-    };
-
-    console.log('Created lobby (mock):', mockLobby);
-
-    // Set the new lobby in the store
-    useLobbyStore.getState().setLobby(mockLobby);
-
-    // Optional: redirect to LobbyScreen or clear inputs
-    setRoomName('');
-    setMaxPlayers(2);
-    alert(`Lobby "${mockLobby.name}" created! Room Code: ${mockLobby.roomCode}`);
+    // Create lobby in store and navigate
+    createLobby(roomName, maxPlayers);
+    navigate('/lobby');
   };
 
   return (

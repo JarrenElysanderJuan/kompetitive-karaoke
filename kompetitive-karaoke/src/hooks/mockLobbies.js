@@ -1,0 +1,48 @@
+export const mockLobbies = [
+  {
+    roomId: "ABC123",
+    roomCode: "ABC123",
+    name: "Test Room 1",
+    maxPlayers: 4,
+    phase: "LOBBY",
+    song: null,
+    players: [
+      {
+        id: "p2",
+        name: "Bob",
+        ready: false,
+        score: 0,
+        combo: 0,
+        accuracy: 0,
+        finished: false,
+        isHost: true,
+        socketId: null,
+        connected: true,
+      },
+    ],
+    hostId: "p2",
+  },
+  {
+    roomId: "XYZ789",
+    roomCode: "XYZ789",
+    name: "Test Room 2",
+    maxPlayers: 4,
+    phase: "LOBBY",
+    song: null,
+    players: [
+      {
+        id: "p3",
+        name: "Charlie",
+        ready: false,
+        score: 0,
+        combo: 0,
+        accuracy: 0,
+        finished: false,
+        isHost: true,
+        socketId: null,
+        connected: true,
+      },
+    ],
+    hostId: "p3",
+  },
+];
