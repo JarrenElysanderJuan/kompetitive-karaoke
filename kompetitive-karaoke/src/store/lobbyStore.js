@@ -31,10 +31,18 @@ export const useLobbyStore = create((set, get) => ({
   //   CLIENT-ONLY (never synced to server):
   //     - currentUserId, currentUserName: local user identity
   //
+  // BATTLE TIMING:
+  //   - battleStartTime: unix ms when battle started (from server)
+  //   - Used by client to calculate lyric progression
+  //   - Do NOT use Date.now() for lyric timing
+  //   - Calculate elapsed: (Date.now() - battleStartTime)
+  //   - Calculate currentLine: Math.floor(elapsed / lineDurationMs)
+  //
   // MUTATION RULES:
   //   - Never mutate lobby.players directly in component code
   //   - Always use actions: addPlayer(), removePlayer(), setReady(), updateScore()
   //   - Use LOBBY_PHASES constant for phase checks (never string literals)
+  //   - Only set battleStartTime via setBattleStartTime() action
   //
   lobby: {
     roomId: null,                           // SERVER-OWNED
@@ -42,12 +50,17 @@ export const useLobbyStore = create((set, get) => ({
     name: null,                             // SERVER-OWNED
     maxPlayers: 4,                          // SERVER-OWNED
     phase: LOBBY_PHASES.LOBBY,              // SERVER-OWNED (controls UI state)
-    song: null,                             // SHARED { songId, title, fileUrl, durationMs, difficulty, lyrics }
+    song: null,                             // SHARED { songId, title, fileUrl, durationMs, difficulty, lyrics, lineDurations, lineTimings }
     players: [],                            // SERVER-OWNED { id, name, ready, score, combo, accuracy, finished, isHost }
     hostId: null,                           // SERVER-OWNED (who can start battle)
-    battleStartTime: null,                  // TODO: BACKEND - timestamp when battle started (for lyric sync)
+    battleStartTime: null,                  // SERVER-OWNED - unix ms from PHASE_CHANGE message (for lyric sync)
   },
   
+  // Helper to set battle start time (triggered by PHASE_CHANGE message)
+  setBattleStartTime: (timestamp) =>
+    set((state) => ({
+      lobby: { ...state.lobby, battleStartTime: timestamp }
+    })),
   setLobby: (lobby) => set({ lobby }),
 
   
@@ -145,13 +158,40 @@ export const useLobbyStore = create((set, get) => ({
     })),
 
   // ============================================================================
-  // LOBBY ACTIONS - Phase Management
+  // LOBBY ACTIONS - Phase Management (SERVER-DRIVEN)
   // ============================================================================
 
   /**
    * startBattle: Transition lobby from LOBBY → IN_BATTLE
    * AUTHORITY: Server (only host can request, server validates and broadcasts)
-   * TODO: BACKEND - send "START_BATTLE" event to server, update on "PHASE_CHANGE" message
+   * 
+   * CLIENT FLOW:
+   *   1. Host clicks "Start Battle" button
+   *   2. Send "START_BATTLE" to server
+   *   3. Wait for "PHASE_CHANGE" message from server
+   *   4. Server validates: all ready? song selected? room full?
+   *   5. Server broadcasts PHASE_CHANGE with:
+   *      - phase: "IN_BATTLE"
+   *      - startTime: unix ms (server's battle start time)
+   *      - song: SongConfig with lyrics, lineDurations, lineTimings
+   *   6. Call startBattle() + setBattleStartTime(startTime)
+   *   7. BattlePage mounts, audio capture starts
+   * 
+   * TIMING SYNCHRONIZATION:
+   *   - Use server's startTime, NOT Date.now()
+   *   - All clients show same lyric at same moment
+   *   - Audio chunks timestamped relative to startTime
+   * 
+   * LYRIC PROGRESSION:
+   *   - Song config includes lineTimings (cumulative ms)
+   *   - Client calculates: currentLine from (Date.now() - startTime)
+   *   - NOT fixed 4-second intervals
+   * 
+   * TODO: BACKEND
+   *   - Host-only validation on server
+   *   - Send PHASE_CHANGE with startTime + song metadata
+   *   - Include lineDurations and lineTimings in song
+   *   - Kick clients if they miss PHASE_CHANGE
    */
   startBattle: () =>
     set((state) => ({ 
@@ -161,7 +201,29 @@ export const useLobbyStore = create((set, get) => ({
   /**
    * endBattle: Transition lobby from IN_BATTLE → RESULTS
    * AUTHORITY: Server (when all players finish or timeout, server broadcasts)
-   * TODO: BACKEND - triggered by "BATTLE_RESULTS" server message
+   * 
+   * TRIGGERED BY:
+   *   - All players sent FINISH_BATTLE message
+   *   - OR timeout: (currentTime - startTime) >= expectedEndTime * 1.5
+   *   - Server sends BATTLE_RESULTS message
+   * 
+   * SERVER CALCULATES:
+   *   - Final scores for all players
+   *   - Rankings (sort by score, then by finish time)
+   *   - Any achievements or badges
+   * 
+   * CLIENT RESPONSIBILITIES:
+   *   - Stop audio capture
+   *   - Stop sending audio chunks
+   *   - Display results from server
+   *   - Do NOT calculate final scores
+   *   - Do NOT rerank players
+   * 
+   * TODO: BACKEND
+   *   - Detect when all players finished or timeout reached
+   *   - Calculate final rankings on server
+   *   - Send BATTLE_RESULTS with final player list
+   *   - Transition phase to RESULTS
    */
   endBattle: () =>
     set((state) => ({ 
@@ -171,11 +233,31 @@ export const useLobbyStore = create((set, get) => ({
   /**
    * resetToLobby: Transition lobby from RESULTS → LOBBY
    * AUTHORITY: Server or Client (client requests, server confirms)
-   * TODO: BACKEND - send event to server to reset battle
+   * 
+   * WHEN CALLED:
+   *   - User clicks "Back to Lobby" on results screen
+   *   - Send event to server requesting reset
+   *   - Server validates (is host? do they want another round?)
+   *   - Server broadcasts phase change
+   * 
+   * CLEANUP:
+   *   - Clear battle state (battleStartTime = null)
+   *   - Reset ready status for all players (ready = false)
+   *   - Keep players in lobby (don't eject)
+   *   - Clear song selection (for next round)
+   * 
+   * TODO: BACKEND
+   *   - Clear server battle state
+   *   - Send PHASE_CHANGE to LOBBY
+   *   - Allow host to select new song
    */
   resetToLobby: () =>
     set((state) => ({ 
-      lobby: { ...state.lobby, phase: LOBBY_PHASES.LOBBY } 
+      lobby: { 
+        ...state.lobby, 
+        phase: LOBBY_PHASES.LOBBY,
+        battleStartTime: null  // Clear timing when returning to lobby
+      } 
     })),
 
   // ============================================================================

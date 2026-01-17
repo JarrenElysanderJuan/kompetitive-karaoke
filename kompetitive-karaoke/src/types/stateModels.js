@@ -78,11 +78,39 @@ export const PlayerStateShape = {
  * 
  * AUTHORITY: SERVER-OWNED (server controls battle flow)
  * 
- * @property {number} startedAt - Unix timestamp when battle started (TODO: BACKEND - for client lyric sync)
+ * TIMING & SYNCHRONIZATION:
+ *   - startedAt: Server unix timestamp when battle began
+ *   - durationMs: Total battle duration (from song length)
+ *   - expectedEndAt: startedAt + durationMs (theoretical end time)
+ *   - Server is the source of truth for time
+ *   - Client calculates elapsed: (now - startedAt)
+ *   - Client calculates currentLine: Math.floor(elapsedMs / lineAverageMs)
+ * 
+ * LYRIC PROGRESSION:
+ *   - Lyrics array comes from SongConfig (sent by server)
+ *   - Each lyric has a duration (in milliseconds)
+ *   - Client calculates which line to display from elapsed time
+ *   - Not interval-based (would desync across players)
+ *   - Timestamp-based from server startedAt
+ * 
+ * PLAYER TRACKING:
+ *   - finishedPlayers: Set of player IDs who reached end of lyrics
+ *   - allFinished: true when all players finished (or timeout)
+ *   - Server tracks when each player sends FINISH_BATTLE message
+ * 
+ * TODO: BACKEND
+ *   - startedAt must be unix milliseconds (Date.now())
+ *   - durationMs from SongConfig.durationMs
+ *   - lineDurations array: duration of each lyric line in ms
+ *   - lineTimings array: cumulative ms timestamps [0, 4000, 8000, ...]
+ *   - Track player finish times for leaderboard
+ *   - Handle timeout if battle runs too long (1.5x expected duration?)
+ * 
+ * @property {number} startedAt - Unix ms when battle started (for client sync)
  * @property {number} durationMs - Expected battle duration in milliseconds
- * @property {number} expectedEndAt - startedAt + durationMs (TODO: BACKEND)
- * @property {string[]} finishedPlayers - Array of player IDs who finished
- * @property {boolean} allFinished - Whether all players finished
+ * @property {number} expectedEndAt - startedAt + durationMs
+ * @property {string[]} finishedPlayers - Player IDs who finished lyrics
+ * @property {boolean} allFinished - All players finished (or timeout reached)
  */
 export const BattleStateShape = {
   startedAt: "number",
@@ -96,16 +124,39 @@ export const BattleStateShape = {
  * @typedef {Object} SongConfig
  * Metadata for a single song
  * 
- * AUTHORITY: SERVER-OWNED (sent in lobby snapshot)
+ * AUTHORITY: SERVER-OWNED (sent in lobby snapshot and battle start)
+ * 
+ * LYRIC PROGRESSION:
+ *   - lyrics: array of line strings
+ *   - lineDurations: time each line displays in milliseconds (e.g., [4000, 4000, 3500, ...])
+ *   - lineTimings: cumulative timestamps [0, 4000, 8000, 11500, ...] (TODO: BACKEND)
+ *   
+ *   Client calculation for currentLine:
+ *     elapsedMs = Date.now() - battle.startedAt
+ *     currentLine = lineTimings.findIndex(t => t <= elapsedMs) for accurate lyric
+ *     OR: currentLine = Math.floor(elapsedMs / avgLineDuration) for fallback
+ * 
+ * AUDIO STREAMING:
+ *   - fileUrl: URL to download audio file
+ *   - Used by client for karaoke backing track (future)
+ *   - Not used in current mock implementation
+ * 
+ * TODO: BACKEND
+ *   - Generate lineDurations from lyric timestamps
+ *   - Include lineTimings in SongConfig for accuracy
+ *   - Provide audio file at fileUrl for playback
+ *   - Consider: should client pre-cache audio or stream?
  * 
  * @property {string} songId - Unique song ID
  * @property {string} title - Song title
  * @property {string} artist - Artist name
  * @property {number} durationMs - Total duration in milliseconds
  * @property {string[]} lyrics - Array of lyric lines
+ * @property {number[]} lineDurations - Time each line displays in ms (TODO: BACKEND)
+ * @property {number[]} lineTimings - Cumulative timestamps for each line (TODO: BACKEND)
  * @property {string} difficulty - "easy" | "medium" | "hard"
  * @property {number} maxScore - Maximum possible score for this song
- * @property {string} fileUrl - URL to audio file on server (TODO: BACKEND)
+ * @property {string} fileUrl - URL to audio file on server
  */
 export const SongConfigShape = {
   songId: "string",
@@ -113,6 +164,8 @@ export const SongConfigShape = {
   artist: "string",
   durationMs: "number",
   lyrics: "string[]",
+  lineDurations: "number[]",              // TODO: BACKEND
+  lineTimings: "number[]",                // TODO: BACKEND
   difficulty: "string",
   maxScore: "number",
   fileUrl: "string",
@@ -128,7 +181,26 @@ export const SongConfigShape = {
  *   - players: SERVER-OWNED, server is authority on player list
  *   - song: SHARED, host selects, server validates and broadcasts
  *   - hostId: SERVER-OWNED, assigned at creation
- *   - battleStartTime: TODO: BACKEND, server sends when battle starts
+ *   - battleStartTime: SERVER-OWNED, sent on PHASE_CHANGE to IN_BATTLE
+ * 
+ * BATTLE TIMING:
+ *   - During LOBBY phase: battleStartTime is null
+ *   - During IN_BATTLE phase: battleStartTime is unix ms when battle started
+ *   - Client uses battleStartTime to calculate lyric progression
+ *   - Do NOT use Date.now() - use server-provided battleStartTime
+ *   - Lyric index: Math.floor((Date.now() - battleStartTime) / lineAvgDurationMs)
+ * 
+ * LYRIC PROGRESSION:
+ *   - lyrics come from song.lyrics array
+ *   - Current approach: fixed 4-second intervals (mock)
+ *   - Server approach: line durations from SongConfig.lineDurations
+ *   - Calculation: currentLine based on elapsed time, not client interval
+ * 
+ * TODO: BACKEND
+ *   - Send battleStartTime in PHASE_CHANGE to IN_BATTLE message
+ *   - Include lineDurations and lineTimings in SongConfig
+ *   - Handle time skew: what if client/server clocks differ?
+ *   - Consider NTP-like sync for large clock differences
  * 
  * @property {string | null} roomId - Unique lobby ID assigned by server
  * @property {string | null} roomCode - Short code for joining (e.g., "A7KQ")
@@ -138,7 +210,7 @@ export const SongConfigShape = {
  * @property {SongConfig | null} song - Currently selected song
  * @property {PlayerState[]} players - Array of all players in lobby
  * @property {string | null} hostId - ID of the player who can start battle
- * @property {number | null} battleStartTime - Unix ms when battle started (TODO: BACKEND)
+ * @property {number | null} battleStartTime - Unix ms when battle started
  */
 export const LobbyStateShape = {
   roomId: "string | null",
