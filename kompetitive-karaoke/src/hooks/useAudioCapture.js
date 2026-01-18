@@ -129,7 +129,7 @@ export function useAudioCapture(onChunk, options = {}) {
   const startCapture = useCallback(async () => {
     try {
       setError(null);
-      
+
       if (debugLogging) {
         console.log("[AudioCapture] Requesting microphone permission...");
       }
@@ -138,15 +138,17 @@ export function useAudioCapture(onChunk, options = {}) {
       // This will throw NotAllowedError if user denies
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          echoCancellation: true,        // Enable echo cancellation
-          noiseSuppression: true,        // Enable noise suppression
-          sampleRate: 44100,             // 44.1kHz for optimal quality
-          autoGainControl: true,         // Normalize peaks
+          echoCancellation: false,       // Disable for raw music input
+          noiseSuppression: false,       // Disable to prevent cutting out singing
+          autoGainControl: false,        // Disable to prevent volume pumping
+          sampleRate: 44100,
         },
       });
 
-      if (debugLogging) {
-        console.log(`[AudioCapture] Permission granted. Microphone tracks: ${mediaStream.getAudioTracks().length}`);
+      const track = mediaStream.getAudioTracks()[0];
+      if (debugLogging || true) { // Force log
+        console.log(`[AudioCapture] 🎤 Using Microphone: "${track.label}"`);
+        console.log(`[AudioCapture] Settings:`, track.getSettings());
       }
 
       mediaStreamRef.current = mediaStream;
@@ -166,71 +168,72 @@ export function useAudioCapture(onChunk, options = {}) {
       chunker.sampleRate = audioContext.sampleRate;
       chunkerRef.current = chunker;
 
-      // CONNECT AUDIO NODES: Stream → Source → Analyser
+      // createScriptProcessor (bufferSize, inputChannels, outputChannels)
+      // Buffer size 4096 is a good balance between latency (92ms) and performance
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      processorRef.current = processor;
+
+      // Update chunker sample rate
+      chunker.sampleRate = audioContext.sampleRate;
+
+      // Create Source from Microphone Stream
+      // Create Source from Microphone Stream
       const source = audioContext.createMediaStreamSource(mediaStream);
-      const analyser = audioContext.createAnalyser();
-      analyserRef.current = analyser;
 
-      analyser.fftSize = 2048;               // FFT size for frequency resolution
-      analyser.smoothingTimeConstant = 0.8; // Smoothing for frequency data
-      source.connect(analyser);
+      // Ensure context is running (sometimes starts suspended)
+      if (audioContext.state === 'suspended') {
+        audioContext.resume();
+      }
 
-      // POLLING LOOP (NOT ScriptProcessorNode - that's deprecated)
-      // Polls frequency data every 20ms in synchronous callback
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-      
-      captureStartTimeRef.current = Date.now();
       let chunkCount = 0;
 
-      const pollInterval = setInterval(() => {
-        if (!isCapturingRef.current) {
-          clearInterval(pollInterval);
-          return;
+      // AUDIO PROCESS CALLBACK (Runs continuously on main thread)
+      processor.onaudioprocess = (e) => {
+        if (!isCapturingRef.current) return;
+
+        const inputBuffer = e.inputBuffer;
+        const inputData = inputBuffer.getChannelData(0); // Float32Array
+
+        // DEBUG: Check input levels immediately
+        if (chunkCount % 50 === 0) { // Log every ~1s (approx)
+          let sum = 0;
+          for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
+          const rms = Math.sqrt(sum / inputData.length);
+          console.log(`[AudioCapture] Input RMS: ${rms.toFixed(5)}`);
         }
 
-        try {
-          // Get frequency domain data [0, 255]
-          analyser.getByteFrequencyData(dataArray);
-          
-          // Convert Uint8 [0, 255] to Float32 [-1, 1] (standard audio format)
-          // This matches expected PCM format for backend analysis
-          const samples = new Float32Array(dataArray.length);
-          for (let i = 0; i < dataArray.length; i++) {
-            samples[i] = (dataArray[i] - 128) / 128;
-          }
-
-          // CHUNK PROCESSING: Accumulates samples until a complete chunk forms
-          // Returns array of ready chunks (usually 0 or 1, sometimes 2 if batch)
-          const elapsedMs = Date.now() - captureStartTimeRef.current;
-          for (const chunk of chunker.processFrames(samples, elapsedMs)) {
-            if (onChunk) {
-              onChunk(chunk);
-              
-              if (debugLogging && chunkCount % 10 === 0) {
-                // Log every 200ms for debugging (10 chunks @ 20ms)
-                console.log(`[AudioCapture] Chunk #${chunkCount}, timestamp: ${chunk.timestamp}ms, samples: ${chunk.audioData.length}`);
-              }
-              chunkCount++;
+        // Process frames
+        // We don't track startTimestampMs here because chunker handles cumulative time
+        for (const chunk of chunker.processFrames(inputData)) {
+          if (onChunk) {
+            onChunk(chunk);
+            if (debugLogging && chunkCount % 10 === 0) {
+              console.log(`[AudioCapture] Chunk #${chunkCount}, timestamp: ${chunk.timestamp}ms`);
             }
+            chunkCount++;
           }
-        } catch (pollErr) {
-          // Don't stop capture on transient polling errors
-          console.error("[AudioCapture] Polling error:", pollErr);
         }
-      }, chunkDurationMs);
+      };
 
-      processorRef.current = pollInterval; // Store interval ID for cleanup
+      // Connect graph: Source -> Processor -> Destination (Muted)
+      // Destination connection required for Chrome to fire audioprocess
+      source.connect(processor);
+
+      // Mute output to prevent feedback/echo
+      const gainNode = audioContext.createGain();
+      gainNode.gain.value = 0;
+      processor.connect(gainNode);
+      gainNode.connect(audioContext.destination);
 
       if (debugLogging) {
-        console.log(`[AudioCapture] Polling started at ${chunkDurationMs}ms intervals`);
+        console.log(`[AudioCapture] ScriptProcessor started`);
       }
 
       updateCapturingState(true);
     } catch (err) {
       // TRANSLATE ERROR CODES TO USER-FRIENDLY MESSAGES
       let userMessage = err.message;
-      
+
       if (err.name === "NotAllowedError") {
         userMessage = "Microphone access denied. Allow access in browser settings.";
       } else if (err.name === "NotFoundError") {
@@ -277,12 +280,13 @@ export function useAudioCapture(onChunk, options = {}) {
 
     updateCapturingState(false);
 
-    // 1. STOP POLLING LOOP (prevents further onChunk callbacks)
-    if (processorRef.current && typeof processorRef.current === 'number') {
-      clearInterval(processorRef.current);
+    // 1. STOP SCRIPT PROCESSOR
+    if (processorRef.current) {
+      processorRef.current.disconnect();
+      processorRef.current.onaudioprocess = null;
       processorRef.current = null;
       if (debugLogging) {
-        console.log("[AudioCapture] Polling interval cleared");
+        console.log("[AudioCapture] ScriptProcessor disconnected");
       }
     }
 

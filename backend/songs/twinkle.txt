@@ -1,0 +1,20 @@
+#TITLE:Twinkle Twinkle UltraStar
+#ARTIST:Traditional
+#MP3:twinkle.mp3
+#BPM:120
+#GAP:0
+: 0 4 0 Twin
+: 4 4 0 kle
+: 8 4 7 twin
+: 12 4 7 kle
+: 16 4 9 Lit
+: 20 4 9 tle
+: 24 8 7 Star
+- 32
+: 32 4 5 How
+: 36 4 5 I
+: 40 4 4 won
+: 44 4 4 der
+: 48 4 2 what
+: 52 4 2 you
+: 56 8 0 are

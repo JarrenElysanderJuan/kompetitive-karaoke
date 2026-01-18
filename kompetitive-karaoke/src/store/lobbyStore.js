@@ -7,6 +7,7 @@ import { create } from "zustand";
  */
 export const LOBBY_PHASES = {
   LOBBY: "LOBBY",           // Players joining, before battle starts
+  LOADING: "LOADING",       // Pre-loading audio assets
   IN_BATTLE: "IN_BATTLE",   // Battle active, lyrics displayed, audio streaming
   RESULTS: "RESULTS",       // Battle ended, showing results/podium
 };
@@ -54,8 +55,9 @@ export const useLobbyStore = create((set, get) => ({
     players: [],                            // SERVER-OWNED { id, name, ready, score, combo, accuracy, finished, isHost }
     hostId: null,                           // SERVER-OWNED (who can start battle)
     battleStartTime: null,                  // SERVER-OWNED - unix ms from PHASE_CHANGE message (for lyric sync)
+    availableSongs: [],                     // SERVER-OWNED - list of available songs from server
   },
-  
+
   // Helper to set battle start time (triggered by PHASE_CHANGE message)
   setBattleStartTime: (timestamp) =>
     set((state) => ({
@@ -63,7 +65,16 @@ export const useLobbyStore = create((set, get) => ({
     })),
   setLobby: (lobby) => set({ lobby }),
 
-  
+
+  // ============================================================================
+  // CONNECTION STATE (Client-Only)
+  // ============================================================================
+  connectionState: 'disconnected',          // 'disconnected' | 'connecting' | 'connected'
+  connectionError: null,                    // Error object | null
+
+  setConnectionState: (status) => set({ connectionState: status }),
+  setConnectionError: (error) => set({ connectionError: error }),
+
   // ============================================================================
   // CLIENT-ONLY STATE (never synced to server)
   // ============================================================================
@@ -95,9 +106,15 @@ export const useLobbyStore = create((set, get) => ({
    * TODO: BACKEND - this will be triggered by "PLAYER_JOINED" or "LOBBY_SNAPSHOT" message
    */
   addPlayer: (player) =>
-    set((state) => ({
-      lobby: { ...state.lobby, players: [...state.lobby.players, player] },
-    })),
+    set((state) => {
+      // Idempotency check: don't add if already exists
+      if (state.lobby.players.find(p => p.id === player.id)) {
+        return state;
+      }
+      return {
+        lobby: { ...state.lobby, players: [...state.lobby.players, player] },
+      };
+    }),
 
   /**
    * removePlayer: Remove a player from the lobby
@@ -194,8 +211,8 @@ export const useLobbyStore = create((set, get) => ({
    *   - Kick clients if they miss PHASE_CHANGE
    */
   startBattle: () =>
-    set((state) => ({ 
-      lobby: { ...state.lobby, phase: LOBBY_PHASES.IN_BATTLE } 
+    set((state) => ({
+      lobby: { ...state.lobby, phase: LOBBY_PHASES.IN_BATTLE }
     })),
 
   /**
@@ -226,8 +243,8 @@ export const useLobbyStore = create((set, get) => ({
    *   - Transition phase to RESULTS
    */
   endBattle: () =>
-    set((state) => ({ 
-      lobby: { ...state.lobby, phase: LOBBY_PHASES.RESULTS } 
+    set((state) => ({
+      lobby: { ...state.lobby, phase: LOBBY_PHASES.RESULTS }
     })),
 
   /**
@@ -252,12 +269,12 @@ export const useLobbyStore = create((set, get) => ({
    *   - Allow host to select new song
    */
   resetToLobby: () =>
-    set((state) => ({ 
-      lobby: { 
-        ...state.lobby, 
+    set((state) => ({
+      lobby: {
+        ...state.lobby,
         phase: LOBBY_PHASES.LOBBY,
         battleStartTime: null  // Clear timing when returning to lobby
-      } 
+      }
     })),
 
   // ============================================================================
